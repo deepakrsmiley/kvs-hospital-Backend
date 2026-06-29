@@ -15,6 +15,7 @@ import DischargePrint from "./pages/DischargePrint.jsx";
 import BillList from "./pages/BillList.jsx";
 import BillForm from "./pages/BillForm.jsx";
 import BillPrint from "./pages/BillPrint.jsx";
+import OPBillForm from "./components/OPBillForm.jsx";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -56,6 +57,25 @@ export default function App() {
         <Route path="bills" element={<BillList />} />
         <Route path="bills/new" element={<BillForm />} />
         <Route path="bills/:id/edit" element={<BillForm />} />
+        <Route
+          path="op-bill/new"
+          element={
+            <OPBillForm
+              onSave={async (payload) => {
+                const token = localStorage.getItem("token");
+                const res = await fetch("/api/bills", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify(payload),
+                });
+                if (!res.ok) throw new Error("Save failed");
+              }}
+            />
+          }
+        />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

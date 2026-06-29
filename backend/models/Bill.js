@@ -51,13 +51,35 @@ const hsnSummarySchema = new mongoose.Schema(
   { _id: false }
 );
 
+// ── OP Consolidated schemas ───────────────────────────────────────────────────
+const opSectionItemSchema = new mongoose.Schema(
+  {
+    description: String,
+    qty: { type: Number, default: 1 },
+    rate: { type: Number, default: 0 },
+    discountPercent: { type: Number, default: 0 },
+    amount: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
+const opSectionSchema = new mongoose.Schema(
+  {
+    sectionType: { type: String, default: "custom" },
+    sectionLabel: { type: String, default: "" },
+    items: [opSectionItemSchema],
+    sectionTotal: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
 const billSchema = new mongoose.Schema(
   {
     billNo: { type: String, required: true, unique: true },
     billDate: { type: String, required: true },
     billType: {
       type: String,
-      enum: ["pharmacy", "lab", "consultation", "ip"],
+      enum: ["pharmacy", "lab", "consultation", "ip", "op"],
       default: "pharmacy",
     },
 
@@ -108,6 +130,11 @@ const billSchema = new mongoose.Schema(
     ipLabTotal: { type: Number, default: 0 },
     ipDiscount: { type: Number, default: 0 },
     ipAdvancePaid: { type: Number, default: 0 },
+
+    // ── OP Consolidated fields ──
+    opSections: [opSectionSchema],
+    opDiscount: { type: Number, default: 0 },
+    opNotes: { type: String, default: "" },
 
     // Computed
     grandTotal: { type: Number, default: 0 },

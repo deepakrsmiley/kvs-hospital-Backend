@@ -76,6 +76,28 @@ function computeIP(ipItems, ipConsultFee, ipPharmacyTotal, ipLabTotal, ipDiscoun
   return { computedIPItems: computed, grandTotal };
 }
 
+function computeOP(opSections, opDiscount) {
+  let subtotal = 0;
+  const computed = (opSections || []).map((section) => {
+    let sectionTotal = 0;
+    const items = (section.items || []).map((item) => {
+      const qty  = Number(item.qty)  || 0;
+      const rate = Number(item.rate) || 0;
+      const disc = Number(item.discountPercent) || 0;
+      const gross = qty * rate;
+      const amount = Math.round((gross - (gross * disc) / 100) * 100) / 100;
+      sectionTotal += amount;
+      return { ...item, amount };
+    });
+    sectionTotal = Math.round(sectionTotal * 100) / 100;
+    subtotal += sectionTotal;
+    return { ...section, items, sectionTotal };
+  });
+  const discount   = Number(opDiscount) || 0;
+  const grandTotal = Math.max(0, Math.round((subtotal - discount) * 100) / 100);
+  return { computedSections: computed, grandTotal };
+}
+
 // GET /api/bills?search=&page=&billType=
 router.get("/", async (req, res) => {
   try {
@@ -146,6 +168,9 @@ router.post("/", async (req, res) => {
     } else if (billType === "ip") {
       const { computedIPItems, grandTotal } = computeIP(body.ipItems || [], body.ipConsultFee, body.ipPharmacyTotal, body.ipLabTotal, body.ipDiscount, body.ipAdvancePaid);
       extra = { ipItems: computedIPItems, grandTotal, amountInWords: numberToWordsINR(grandTotal) };
+    } else if (billType === "op") {
+      const { computedSections, grandTotal } = computeOP(body.opSections, body.opDiscount);
+      extra = { opSections: computedSections, grandTotal, amountInWords: numberToWordsINR(grandTotal) };
     }
 
     const bill = await Bill.create({ ...body, ...extra });
@@ -175,6 +200,9 @@ router.put("/:id", async (req, res) => {
     } else if (billType === "ip") {
       const { computedIPItems, grandTotal } = computeIP(body.ipItems || [], body.ipConsultFee, body.ipPharmacyTotal, body.ipLabTotal, body.ipDiscount, body.ipAdvancePaid);
       extra = { ipItems: computedIPItems, grandTotal, amountInWords: numberToWordsINR(grandTotal) };
+    } else if (billType === "op") {
+      const { computedSections, grandTotal } = computeOP(body.opSections, body.opDiscount);
+      extra = { opSections: computedSections, grandTotal, amountInWords: numberToWordsINR(grandTotal) };
     }
 
     const bill = await Bill.findByIdAndUpdate(req.params.id, { ...body, ...extra }, { new: true });

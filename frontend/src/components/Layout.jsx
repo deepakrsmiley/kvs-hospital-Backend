@@ -59,6 +59,9 @@ export default function Layout() {
           <NavLink to="/bills">
             <ClipboardList style={{ color: "inherit" }} /> Hospital Bills
           </NavLink>
+          <NavLink to="/op-bill/new">
+            <ClipboardList /> OP Bill
+          </NavLink>
           <NavLink to="/discharge-summaries">
             <ClipboardList /> Discharge Summaries
           </NavLink>
