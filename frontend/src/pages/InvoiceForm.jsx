@@ -2,7 +2,12 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../api/axios.js";
 
+// ─── Stable unique ID generator ──────────────────────────────────────────────
+let _uid = 0;
+const uid = () => String(++_uid);
+
 const emptyItem = () => ({
+  _key: uid(),
   productName: "",
   batchNo: "",
   mfgDate: "",
@@ -14,6 +19,9 @@ const emptyItem = () => ({
   discountPercent: 0,
   igstPercent: 12,
 });
+
+// When loading from DB, items won't have _key — assign one
+const withKeys = (items = []) => items.map((it) => ({ _key: uid(), ...it }));
 
 export default function InvoiceForm() {
   const { id } = useParams();
@@ -40,7 +48,8 @@ export default function InvoiceForm() {
         setInvoiceNo(inv.invoiceNo);
         setInvoiceDate(inv.invoiceDate);
         setCustomer(inv.customer || {});
-        setItems(inv.items?.length ? inv.items : [emptyItem()]);
+        // FIX: assign stable _key when loading from DB
+        setItems(inv.items?.length ? withKeys(inv.items) : [emptyItem()]);
         setConsultationFee(inv.consultationFee || 0);
         setConsultationDoctor(inv.consultationDoctor || "");
         setConsultationNotes(inv.consultationNotes || "");
@@ -77,7 +86,15 @@ export default function InvoiceForm() {
     setSaving(true);
     setError("");
     try {
-      const payload = { invoiceNo, invoiceDate, customer, items, status, consultationFee: Number(consultationFee || 0), consultationDoctor, consultationNotes };
+      // Strip _key before sending to backend
+      const payload = {
+        invoiceNo, invoiceDate, customer,
+        items: items.map(({ _key, ...rest }) => rest),
+        status,
+        consultationFee: Number(consultationFee || 0),
+        consultationDoctor,
+        consultationNotes,
+      };
       let res;
       if (isEdit) {
         res = await api.put(`/invoices/${id}`, payload);
@@ -205,7 +222,8 @@ export default function InvoiceForm() {
               </thead>
               <tbody>
                 {items.map((item, idx) => (
-                  <tr key={idx}>
+                  // FIX: use stable _key instead of idx — prevents input remount on add/remove
+                  <tr key={item._key}>
                     <td style={{ textAlign: "center", fontWeight: 600 }}>{idx + 1}</td>
                     <td><input value={item.productName} onChange={(e) => updateItem(idx, "productName", e.target.value)} placeholder="Enter product" required /></td>
                     <td><input value={item.batchNo} onChange={(e) => updateItem(idx, "batchNo", e.target.value)} /></td>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../api/axios.js";
 
@@ -148,108 +148,113 @@ const LAB_TESTS = [
 
 const LAB_GROUPS = [...new Set(LAB_TESTS.map((t) => t.group))];
 
+// ─── Stable unique ID generator ──────────────────────────────────────────────
+let _uid = 0;
+const uid = () => String(++_uid);
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const emptyPharmacyItem = () => ({
+  _key: uid(),
   productName: "", batchNo: "", mfgDate: "", expiryDate: "",
   hsnSac: "", qty: 1, mrp: 0, rate: 0, discountPercent: 0, igstPercent: 12,
 });
 
 const emptyLabItem = () => ({
+  _key: uid(),
   testName: "", qty: 1, rate: 0, discountPercent: 0,
 });
 
 const emptyIPItem = () => ({
+  _key: uid(),
   description: "", qty: 1, rate: 0, discountPercent: 0,
 });
 
-const IP_CHARGE_TYPES = [
-  // Room / Accommodation
-  "General Ward Charges",
-  "Semi-Private Room Charges",
-  "Private Room Charges",
-  "Deluxe Room Charges",
-  "Suite Room Charges",
-  "ICU Charges",
-  "NICU Charges",
-  "PICU Charges",
-  "HDU (High Dependency Unit) Charges",
-  "Isolation Room Charges",
+// When loading from DB, items won't have _key — assign one
+const withKeys = (items = []) => items.map((it) => ({ _key: uid(), ...it }));
 
-  // Doctor / Consultant
-  "Consultant Visit Charges",
-  "Specialist Consultation Charges",
-  "Surgeon Charges",
-  "Anaesthetist Charges",
-  "Intensivist Charges",
-  "Resident Doctor Charges",
-  "Second Opinion Charges",
+// ─── PatientInfo and BillMeta defined OUTSIDE component to prevent remount ───
+// FIX: these were defined inside BillForm() as const components, which causes
+// React to treat them as new component types on every render → full remount
+// → all inputs lose focus. Moving them outside (or using useMemo) fixes this.
+function PatientInfo({ patient, setPatient }) {
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="section-header">Patient Information</div>
+      <div className="grid grid-2" style={{ marginBottom: 0 }}>
+        <div className="form-group">
+          <label>Patient Name <span className="req">*</span></label>
+          <input className="form-control" value={patient.name} onChange={(e) => setPatient({ ...patient, name: e.target.value })} placeholder="Enter patient name" required />
+        </div>
+        <div className="form-group">
+          <label>UHID / Patient ID</label>
+          <input className="form-control" value={patient.uhid} onChange={(e) => setPatient({ ...patient, uhid: e.target.value })} placeholder="e.g. KVS-00123" />
+        </div>
+        <div className="form-group">
+          <label>Age</label>
+          <input className="form-control" value={patient.age} onChange={(e) => setPatient({ ...patient, age: e.target.value })} placeholder="e.g. 45 Yrs" />
+        </div>
+        <div className="form-group">
+          <label>Gender</label>
+          <select className="form-control" value={patient.gender} onChange={(e) => setPatient({ ...patient, gender: e.target.value })}>
+            <option value="">Select</option>
+            <option>Male</option>
+            <option>Female</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Mobile Number</label>
+          <input className="form-control" value={patient.phone} onChange={(e) => setPatient({ ...patient, phone: e.target.value })} placeholder="Enter mobile" />
+        </div>
+        <div className="form-group">
+          <label>Referred By Doctor</label>
+          <input className="form-control" value={patient.referredBy} onChange={(e) => setPatient({ ...patient, referredBy: e.target.value })} placeholder="Referring doctor name" />
+        </div>
+        <div className="form-group" style={{ gridColumn: "1 / 3" }}>
+          <label>Address</label>
+          <input className="form-control" value={patient.address} onChange={(e) => setPatient({ ...patient, address: e.target.value })} placeholder="Patient address" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  // Nursing & Care
-  "Nursing Charges",
-  "Special Nursing / Private Nurse Charges",
-  "Attendant Charges",
-  "Night Duty Charges",
-
-  // Operation Theatre
-  "OT Charges (Major)",
-  "OT Charges (Minor)",
-  "OT Charges (Emergency)",
-  "Endoscopy / Laparoscopy Charges",
-  "C-Section / LSCS Charges",
-  "Delivery Charges (Normal)",
-  "Surgical Instrument Charges",
-  "Surgical Disposables",
-
-  // Investigation / Diagnostics
-  "Laboratory / Lab Charges",
-  "X-Ray Charges",
-  "ECG Charges",
-  "Echo / 2D Echo Charges",
-  "Ultrasound Charges",
-  "CT Scan Charges",
-  "MRI Charges",
-  "Doppler Charges",
-  "Colour Doppler Charges",
-  "Biopsy / Histopathology Charges",
-  "Endoscopy Charges",
-
-  // Pharmacy & Consumables
-  "Pharmacy / Medicine Charges",
-  "IV Fluids Charges",
-  "Surgical Consumables",
-  "Implant / Prosthesis Charges",
-  "Suture / Dressing Material",
-
-  // Procedures & Therapy
-  "Procedure Charges",
-  "Dressing Charges",
-  "Injection Charges",
-  "IV Line / Cannula Insertion",
-  "Catheterisation Charges",
-  "Physiotherapy Charges",
-  "Respiratory Therapy Charges",
-  "Dialysis Charges",
-  "Chemotherapy Charges",
-  "Radiation Charges",
-  "Blood Transfusion Charges",
-  "Plasma / Platelet Transfusion",
-
-  // Support Services
-  "Oxygen Charges",
-  "Ventilator Charges",
-  "Nebulisation Charges",
-  "Pulse Oximetry / Monitor Charges",
-  "Ambulance Charges",
-  "Mortuary Charges",
-
-  // Administrative
-  "Registration / Admission Charges",
-  "Medical Certificate Charges",
-  "Case Sheet / Record Charges",
-  "Insurance Processing Charges",
-  "Discharge Summary Charges",
-  "Miscellaneous Charges",
-];
+function BillMeta({ billDate, setBillDate, status, setStatus, paymentMode, setPaymentMode, amountPaid, setAmountPaid }) {
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="section-header">Bill Details</div>
+      <div className="grid grid-2">
+        <div className="form-group">
+          <label>Bill Date <span className="req">*</span></label>
+          <input type="date" className="form-control" value={billDate} onChange={(e) => setBillDate(e.target.value)} required />
+        </div>
+        <div className="form-group">
+          <label>Payment Status</label>
+          <select className="form-control" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="unpaid">Unpaid</option>
+            <option value="paid">Paid</option>
+            <option value="partial">Partial</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Payment Mode</label>
+          <select className="form-control" value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)}>
+            <option value="cash">Cash</option>
+            <option value="card">Card</option>
+            <option value="upi">UPI</option>
+            <option value="netbanking">Net Banking</option>
+            <option value="cheque">Cheque</option>
+            <option value="insurance">Insurance</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Amount Paid (₹)</label>
+          <input type="number" className="form-control" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} min="0" step="0.01" placeholder="0.00" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function BillForm() {
   const { id } = useParams();
@@ -314,8 +319,9 @@ export default function BillForm() {
         setStatus(b.status || "unpaid");
         setPaymentMode(b.paymentMode || "cash");
         setAmountPaid(b.amountPaid || 0);
-        if (b.billType === "pharmacy") setPharmItems(b.items?.length ? b.items : [emptyPharmacyItem()]);
-        if (b.billType === "lab") setLabItems(b.labItems?.length ? b.labItems : [emptyLabItem()]);
+        // FIX: assign stable _key when loading from DB
+        if (b.billType === "pharmacy") setPharmItems(b.items?.length ? withKeys(b.items) : [emptyPharmacyItem()]);
+        if (b.billType === "lab") setLabItems(b.labItems?.length ? withKeys(b.labItems) : [emptyLabItem()]);
         if (b.billType === "consultation") {
           setConsultationFee(b.consultationFee || 0);
           setConsultationDoctor(b.consultationDoctor || "");
@@ -329,7 +335,7 @@ export default function BillForm() {
           setIpDiagnosis(b.ipDiagnosis || "");
           setIpAttendingDoctor(b.ipAttendingDoctor || "");
           setIpDepartment(b.ipDepartment || "");
-          setIpItems(b.ipItems?.length ? b.ipItems : [{ ...emptyIPItem(), description: "Room Charges" }]);
+          setIpItems(b.ipItems?.length ? withKeys(b.ipItems) : [{ ...emptyIPItem(), description: "Room Charges" }]);
           setIpConsultFee(b.ipConsultFee || 0);
           setIpPharmacyTotal(b.ipPharmacyTotal || 0);
           setIpLabTotal(b.ipLabTotal || 0);
@@ -365,9 +371,15 @@ export default function BillForm() {
     setLabItems((p) => p.map((it, i) => (i === idx ? { ...it, [key]: val } : it)));
   const addLab = () => setLabItems((p) => [...p, emptyLabItem()]);
   const removeLab = (idx) => setLabItems((p) => p.filter((_, i) => i !== idx));
-  const addTestFromPicker = (test) => {
-    setLabItems((p) => [...p.filter((x) => x.testName !== ""), { testName: test.name, qty: 1, rate: test.rate, discountPercent: 0 }]);
-  };
+
+  // FIX: useCallback so this function reference is stable across renders
+  const addTestFromPicker = useCallback((test) => {
+    setLabItems((p) => [
+      ...p.filter((x) => x.testName !== ""),
+      { _key: uid(), testName: test.name, qty: 1, rate: test.rate, discountPercent: 0 },
+    ]);
+  }, []);
+
   const calcLabLine = (item) => {
     const gross = (Number(item.qty) || 0) * (Number(item.rate) || 0);
     const disc = (gross * (Number(item.discountPercent) || 0)) / 100;
@@ -375,11 +387,15 @@ export default function BillForm() {
   };
   const labTotal = labItems.reduce((s, it) => s + calcLabLine(it), 0);
 
-  const filteredTests = LAB_TESTS.filter((t) => {
-    const matchGroup = labGroup === "All" || t.group === labGroup;
-    const matchSearch = t.name.toLowerCase().includes(labSearch.toLowerCase());
-    return matchGroup && matchSearch;
-  });
+  // FIX: useMemo so filteredTests doesn't recalculate on every render
+  const filteredTests = useMemo(() =>
+    LAB_TESTS.filter((t) => {
+      const matchGroup = labGroup === "All" || t.group === labGroup;
+      const matchSearch = t.name.toLowerCase().includes(labSearch.toLowerCase());
+      return matchGroup && matchSearch;
+    }),
+    [labGroup, labSearch]
+  );
 
   // ── IP helpers ────────────────────────────────────────────────────────────
   const updateIP = (idx, key, val) =>
@@ -405,14 +421,15 @@ export default function BillForm() {
       const common = { billType, billNo, billDate, patient, status, paymentMode, amountPaid: Number(amountPaid || 0) };
       let payload = { ...common };
 
+      // Strip _key before sending to backend
       if (billType === "pharmacy") {
-        payload = { ...payload, items: pharmItems };
+        payload = { ...payload, items: pharmItems.map(({ _key, ...rest }) => rest) };
       } else if (billType === "lab") {
-        payload = { ...payload, labItems };
+        payload = { ...payload, labItems: labItems.map(({ _key, ...rest }) => rest) };
       } else if (billType === "consultation") {
         payload = { ...payload, consultationFee: Number(consultationFee || 0), consultationDoctor, consultationSpeciality, consultationNotes, consultationDate };
       } else if (billType === "ip") {
-        payload = { ...payload, ipAdmitDate, ipDischargeDate, ipDiagnosis, ipAttendingDoctor, ipDepartment, ipItems, ipConsultFee: Number(ipConsultFee || 0), ipPharmacyTotal: Number(ipPharmacyTotal || 0), ipLabTotal: Number(ipLabTotal || 0), ipDiscount: Number(ipDiscount || 0), ipAdvancePaid: Number(ipAdvancePaid || 0) };
+        payload = { ...payload, ipAdmitDate, ipDischargeDate, ipDiagnosis, ipAttendingDoctor, ipDepartment, ipItems: ipItems.map(({ _key, ...rest }) => rest), ipConsultFee: Number(ipConsultFee || 0), ipPharmacyTotal: Number(ipPharmacyTotal || 0), ipLabTotal: Number(ipLabTotal || 0), ipDiscount: Number(ipDiscount || 0), ipAdvancePaid: Number(ipAdvancePaid || 0) };
       }
 
       let res;
@@ -428,83 +445,6 @@ export default function BillForm() {
       setSaving(false);
     }
   };
-
-  // ── Patient Info (common for all) ────────────────────────────────────────
-  const PatientInfo = () => (
-    <div className="card" style={{ marginBottom: 18 }}>
-      <div className="section-header">Patient Information</div>
-      <div className="grid grid-2" style={{ marginBottom: 0 }}>
-        <div className="form-group">
-          <label>Patient Name <span className="req">*</span></label>
-          <input className="form-control" value={patient.name} onChange={(e) => setPatient({ ...patient, name: e.target.value })} placeholder="Enter patient name" required />
-        </div>
-        <div className="form-group">
-          <label>UHID / Patient ID</label>
-          <input className="form-control" value={patient.uhid} onChange={(e) => setPatient({ ...patient, uhid: e.target.value })} placeholder="e.g. KVS-00123" />
-        </div>
-        <div className="form-group">
-          <label>Age</label>
-          <input className="form-control" value={patient.age} onChange={(e) => setPatient({ ...patient, age: e.target.value })} placeholder="e.g. 45 Yrs" />
-        </div>
-        <div className="form-group">
-          <label>Gender</label>
-          <select className="form-control" value={patient.gender} onChange={(e) => setPatient({ ...patient, gender: e.target.value })}>
-            <option value="">Select</option>
-            <option>Male</option>
-            <option>Female</option>
-            <option>Other</option>
-          </select>
-        </div>
-        <div className="form-group">
-          <label>Mobile Number</label>
-          <input className="form-control" value={patient.phone} onChange={(e) => setPatient({ ...patient, phone: e.target.value })} placeholder="Enter mobile" />
-        </div>
-        <div className="form-group">
-          <label>Referred By Doctor</label>
-          <input className="form-control" value={patient.referredBy} onChange={(e) => setPatient({ ...patient, referredBy: e.target.value })} placeholder="Referring doctor name" />
-        </div>
-        <div className="form-group" style={{ gridColumn: "1 / 3" }}>
-          <label>Address</label>
-          <input className="form-control" value={patient.address} onChange={(e) => setPatient({ ...patient, address: e.target.value })} placeholder="Patient address" />
-        </div>
-      </div>
-    </div>
-  );
-
-  const BillMeta = () => (
-    <div className="card" style={{ marginBottom: 18 }}>
-      <div className="section-header">Bill Details</div>
-      <div className="grid grid-2">
-        <div className="form-group">
-          <label>Bill Date <span className="req">*</span></label>
-          <input type="date" className="form-control" value={billDate} onChange={(e) => setBillDate(e.target.value)} required />
-        </div>
-        <div className="form-group">
-          <label>Payment Status</label>
-          <select className="form-control" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="unpaid">Unpaid</option>
-            <option value="paid">Paid</option>
-            <option value="partial">Partial</option>
-          </select>
-        </div>
-        <div className="form-group">
-          <label>Payment Mode</label>
-          <select className="form-control" value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)}>
-            <option value="cash">Cash</option>
-            <option value="card">Card</option>
-            <option value="upi">UPI</option>
-            <option value="netbanking">Net Banking</option>
-            <option value="cheque">Cheque</option>
-            <option value="insurance">Insurance</option>
-          </select>
-        </div>
-        <div className="form-group">
-          <label>Amount Paid (₹)</label>
-          <input type="number" className="form-control" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} min="0" step="0.01" placeholder="0.00" />
-        </div>
-      </div>
-    </div>
-  );
 
   return (
     <div>
@@ -552,12 +492,14 @@ export default function BillForm() {
       )}
 
       <form onSubmit={handleSubmit}>
-        <PatientInfo />
+        {/* FIX: PatientInfo and BillMeta are now real components defined outside,
+            so React reuses the same DOM nodes instead of destroying and recreating them */}
+        <PatientInfo patient={patient} setPatient={setPatient} />
 
         {/* ═══ PHARMACY ═══ */}
         {billType === "pharmacy" && (
           <>
-            <BillMeta />
+            <BillMeta billDate={billDate} setBillDate={setBillDate} status={status} setStatus={setStatus} paymentMode={paymentMode} setPaymentMode={setPaymentMode} amountPaid={amountPaid} setAmountPaid={setAmountPaid} />
             <div className="card" style={{ marginBottom: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div className="section-header" style={{ margin: 0, border: "none", padding: 0 }}>Pharmacy Items</div>
@@ -584,7 +526,8 @@ export default function BillForm() {
                   </thead>
                   <tbody>
                     {pharmItems.map((item, idx) => (
-                      <tr key={idx}>
+                      // FIX: stable _key instead of idx
+                      <tr key={item._key}>
                         <td style={{ textAlign: "center", fontWeight: 600 }}>{idx + 1}</td>
                         <td><input value={item.productName} onChange={(e) => updatePharm(idx, "productName", e.target.value)} placeholder="Medicine name" required /></td>
                         <td><input value={item.batchNo} onChange={(e) => updatePharm(idx, "batchNo", e.target.value)} /></td>
@@ -617,7 +560,7 @@ export default function BillForm() {
         {/* ═══ LAB ═══ */}
         {billType === "lab" && (
           <>
-            <BillMeta />
+            <BillMeta billDate={billDate} setBillDate={setBillDate} status={status} setStatus={setStatus} paymentMode={paymentMode} setPaymentMode={setPaymentMode} amountPaid={amountPaid} setAmountPaid={setAmountPaid} />
             <div className="card" style={{ marginBottom: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div className="section-header" style={{ margin: 0, border: "none", padding: 0 }}>Lab Tests</div>
@@ -646,11 +589,12 @@ export default function BillForm() {
                     </select>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 6, maxHeight: 320, overflowY: "auto" }}>
-                    {filteredTests.map((t, i) => {
+                    {filteredTests.map((t) => {
                       const already = labItems.some((x) => x.testName === t.name);
                       return (
+                        // FIX: key={t.name} instead of key={i} — stable and unique
                         <button
-                          key={i}
+                          key={t.name}
                           type="button"
                           onClick={() => !already && addTestFromPicker(t)}
                           style={{
@@ -686,7 +630,8 @@ export default function BillForm() {
                   </thead>
                   <tbody>
                     {labItems.map((item, idx) => (
-                      <tr key={idx}>
+                      // FIX: stable _key instead of idx
+                      <tr key={item._key}>
                         <td style={{ textAlign: "center", fontWeight: 600 }}>{idx + 1}</td>
                         <td><input value={item.testName} onChange={(e) => updateLab(idx, "testName", e.target.value)} placeholder="Test name" required /></td>
                         <td><input type="number" value={item.qty} onChange={(e) => updateLab(idx, "qty", e.target.value)} min="1" /></td>
@@ -711,7 +656,7 @@ export default function BillForm() {
         {/* ═══ CONSULTATION ═══ */}
         {billType === "consultation" && (
           <>
-            <BillMeta />
+            <BillMeta billDate={billDate} setBillDate={setBillDate} status={status} setStatus={setStatus} paymentMode={paymentMode} setPaymentMode={setPaymentMode} amountPaid={amountPaid} setAmountPaid={setAmountPaid} />
             <div className="card" style={{ marginBottom: 18 }}>
               <div className="section-header">Consultation Details</div>
               <div className="grid grid-2">
@@ -783,7 +728,7 @@ export default function BillForm() {
               </div>
             </div>
 
-            <BillMeta />
+            <BillMeta billDate={billDate} setBillDate={setBillDate} status={status} setStatus={setStatus} paymentMode={paymentMode} setPaymentMode={setPaymentMode} amountPaid={amountPaid} setAmountPaid={setAmountPaid} />
 
             {/* IP Charges */}
             <div className="card" style={{ marginBottom: 18 }}>
@@ -806,7 +751,8 @@ export default function BillForm() {
                   </thead>
                   <tbody>
                     {ipItems.map((item, idx) => (
-                      <tr key={idx}>
+                      // FIX: stable _key instead of idx
+                      <tr key={item._key}>
                         <td style={{ textAlign: "center", fontWeight: 600 }}>{idx + 1}</td>
                         <td>
                           <select value={item.description} onChange={(e) => updateIP(idx, "description", e.target.value)} style={{ width: "100%", border: "none", background: "transparent", fontSize: 12.5 }}>

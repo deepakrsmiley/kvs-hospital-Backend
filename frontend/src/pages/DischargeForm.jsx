@@ -2,7 +2,11 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../api/axios.js";
 
-const emptyMed = () => ({ name: "", dosage: "", frequency: "", duration: "", instructions: "" });
+// ─── Stable unique ID generator ──────────────────────────────────────────────
+let _uid = 0;
+const uid = () => String(++_uid);
+
+const emptyMed = () => ({ _key: uid(), name: "", dosage: "", frequency: "", duration: "", instructions: "" });
 
 const emptyForm = {
   patientName: "",
@@ -31,6 +35,9 @@ const emptyForm = {
   doctorRegistrationNumber: "",
 };
 
+// When loading from DB, medications won't have _key — assign one
+const withKeys = (meds = []) => meds.map((m) => ({ _key: uid(), ...m }));
+
 export default function DischargeForm() {
   const { id } = useParams();
   const isEdit = Boolean(id);
@@ -42,7 +49,12 @@ export default function DischargeForm() {
   useEffect(() => {
     if (isEdit) {
       api.get(`/discharge-summaries/${id}`).then((res) => {
-        setForm({ ...emptyForm, ...res.data, followUp: { ...emptyForm.followUp, ...res.data.followUp } });
+        setForm({
+          ...emptyForm,
+          ...res.data,
+          medications: withKeys(res.data.medications),
+          followUp: { ...emptyForm.followUp, ...res.data.followUp },
+        });
       });
     } else {
       // prefill doctor details from hospital settings
@@ -80,11 +92,16 @@ export default function DischargeForm() {
     setSaving(true);
     setError("");
     try {
+      // Strip _key before sending to backend
+      const payload = {
+        ...form,
+        medications: form.medications.map(({ _key, ...rest }) => rest),
+      };
       let res;
       if (isEdit) {
-        res = await api.put(`/discharge-summaries/${id}`, form);
+        res = await api.put(`/discharge-summaries/${id}`, payload);
       } else {
-        res = await api.post("/discharge-summaries", form);
+        res = await api.post("/discharge-summaries", payload);
       }
       navigate(`/discharge-summaries/${res.data._id}/print`);
     } catch (err) {
@@ -159,7 +176,8 @@ export default function DischargeForm() {
             <button type="button" className="btn btn-secondary btn-sm" onClick={addMed}>+ Add Medicine</button>
           </div>
           {form.medications.map((med, idx) => (
-            <div key={idx} className="grid grid-4" style={{ marginBottom: 10, alignItems: "end" }}>
+            // FIX: use stable _key instead of idx — prevents input remount on add/remove
+            <div key={med._key} className="grid grid-4" style={{ marginBottom: 10, alignItems: "end" }}>
               <div className="form-group">
                 <label>Medicine Name</label>
                 <input className="form-control" value={med.name} onChange={(e) => updateMed(idx, "name", e.target.value)} />
